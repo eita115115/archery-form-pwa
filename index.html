@@ -271,6 +271,8 @@
       <button id="btn-camera" class="btn" onclick="toggleCamera()">▶ カメラ開始</button>
       <button class="btn" onclick="switchCamera()">切替</button>
       <button class="btn" onclick="takeSnapshot()">スナップ</button>
+      <button class="btn" onclick="uploadVideo()" style="width:auto; padding:8px 10px; font-size:12px;">動画アップロード</button>
+      <input type="file" id="video-upload" accept="video/*" style="display:none" onchange="handleVideoUpload(event)">
     </div>
     <div style="text-align:center; font-size:10px; color:#64748b; margin:6px 0 4px;">
       横（サイドビュー）推奨。十分な明るさで上半身全体を映してください。
@@ -434,6 +436,8 @@
     let pendingShot = null; // {metrics, phase, advice, ts}
 
     let wakeLock = null;
+
+    let currentVideoUrl = null;
 
     const LM = {
       NOSE: 0, LEFT_EYE: 2, RIGHT_EYE: 5, LEFT_EAR: 7, RIGHT_EAR: 8,
@@ -785,6 +789,14 @@
       }
 
       try {
+        if (currentVideoUrl) {
+          URL.revokeObjectURL(currentVideoUrl);
+          currentVideoUrl = null;
+        }
+        video.src = '';
+        const ov = $("overlay");
+        ov.style.pointerEvents = '';
+
         videoStream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: currentFacing, width: {ideal: 1280}, height: {ideal: 720} }
         });
@@ -818,7 +830,14 @@
       if (videoStream) { videoStream.getTracks().forEach(t => t.stop()); videoStream = null; }
       $("video").srcObject = null;
 
+      if (currentVideoUrl) {
+        URL.revokeObjectURL(currentVideoUrl);
+        currentVideoUrl = null;
+      }
+      $("video").src = '';
+      $("video").controls = false;
       const ov = $("overlay");
+      ov.style.pointerEvents = '';
       const ctx = ov.getContext("2d");
       ctx && ctx.clearRect(0, 0, ov.width, ov.height);
 
@@ -826,7 +845,7 @@
       $("live-info").style.display = "none";
       $("btn-camera").textContent = "▶ カメラ開始";
       $("status-dot").className = "status-dot";
-      $("status-text").textContent = "カメラ停止中";
+      $("status-text").textContent = "停止中";
 
       updateLive(null, "IDLE");
       updateAdvice([]);
@@ -842,6 +861,64 @@
       if (was) stopCamera();
       currentFacing = currentFacing === "user" ? "environment" : "user";
       if (was) setTimeout(startCamera, 140);
+    }
+
+    function uploadVideo() {
+      const input = document.getElementById('video-upload');
+      if (input) input.click();
+    }
+
+    function handleVideoUpload(event) {
+      const file = event.target.files[0];
+      if (file) {
+        loadVideoForAnalysis(file);
+      }
+      event.target.value = '';
+    }
+
+    async function loadVideoForAnalysis(file) {
+      stopCamera();
+      const video = $("video");
+      const startO = $("start-overlay");
+      const live = $("live-info");
+      const st = $("status-text");
+      const ov = $("overlay");
+
+      video.srcObject = null;
+      if (currentVideoUrl) {
+        URL.revokeObjectURL(currentVideoUrl);
+      }
+      currentVideoUrl = URL.createObjectURL(file);
+      video.src = currentVideoUrl;
+      video.muted = true;
+      video.controls = true;
+      ov.style.pointerEvents = 'none';
+
+      await new Promise((resolve) => {
+        video.onloadedmetadata = resolve;
+      });
+
+      video.play().catch(console.error);
+
+      if (!poseLandmarker) {
+        const ok = await loadLandmarker();
+        if (!ok) {
+          return;
+        }
+      }
+
+      webcamRunning = true;
+      startO.style.display = "none";
+      live.style.display = "flex";
+      $("btn-camera").textContent = "■ 停止";
+      st.textContent = "動画分析中";
+
+      predictLoop();
+
+      video.onended = () => {
+        webcamRunning = false;
+        st.textContent = "動画終了";
+      };
     }
 
     function applyMirror() {
