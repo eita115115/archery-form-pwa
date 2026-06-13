@@ -724,8 +724,8 @@
         logDebug("forVisionTasks OK");
 
         // Always use the bundled local model for reliable offline on GitHub Pages (no external fetch, no IDB dependency for model).
-        // This fixes loading failures from external model or stale IDB data.
-        let modelAssetPath = LOCAL_MODEL_PATH;
+        // Resolve relative path correctly even on subdir GitHub Pages (e.g. /archery-form-pwa/).
+        let modelAssetPath = new URL(LOCAL_MODEL_PATH, location.href).href;
         if (modelType === 'full') {
           // Full model not bundled, fall back to external (requires net first time)
           modelAssetPath = MODEL_URLS.full;
