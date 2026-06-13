@@ -15,7 +15,7 @@ const CORE_ASSETS = [
 
 // Critical external assets for offline (MediaPipe free browser version)
 const PRECACHE_URLS = [
-  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs'
+  'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.mjs'
 ];
 
 self.addEventListener('install', (event) => {
