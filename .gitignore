@@ -1,0 +1,15 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Local server logs or temp
+*.log
+
+# No node_modules or build since it's pure static
+node_modules/
+dist/
+build/
