@@ -709,19 +709,12 @@
         if (!FilesetResolver || !PoseLandmarker) throw new Error("MediaPipe bundle not loaded");
 
         const vision = await FilesetResolver.forVisionTasks(WASM_BASE);
-        // Prefer the bundled local model file (served with the PWA on GitHub Pages) for reliable loading without external network or SW dependency for the model itself.
-        // Fall back to IDB (from previous prep) or external URL if needed.
+        // Always use the bundled local model for reliable offline on GitHub Pages (no external fetch, no IDB dependency for model).
+        // This fixes loading failures from external model or stale IDB data.
         let modelAssetPath = LOCAL_MODEL_PATH;
-        const modelUrl = MODEL_URLS[modelType] || MODEL_URLS.lite;
-        try {
-          const localBuffer = await loadModelFromIDB(modelUrl);
-          if (localBuffer) {
-            const blob = new Blob([localBuffer], { type: 'application/octet-stream' });
-            modelAssetPath = URL.createObjectURL(blob);
-            console.log('Using model from local IDB storage (offline capable)');
-          }
-        } catch (e) {
-          console.warn('Failed to load model from IDB, using bundled local file:', e);
+        if (modelType === 'full') {
+          // Full model not bundled, fall back to external (requires net first time)
+          modelAssetPath = MODEL_URLS.full;
         }
 
         poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
