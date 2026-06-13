@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0ea5e9"/>
+      <stop offset="100%" stop-color="#036aa3"/>
+    </linearGradient>
+  </defs>
+  <circle cx="256" cy="256" r="240" fill="#0f172a"/>
+  <circle cx="256" cy="256" r="200" fill="url(#g)"/>
+  <!-- Bow curve -->
+  <path d="M130 170 Q256 105 382 170" stroke="white" stroke-width="32" fill="none" stroke-linecap="round"/>
+  <line x1="130" y1="170" x2="382" y2="170" stroke="white" stroke-width="20"/>
+  <!-- Arrow -->
+  <line x1="256" y1="170" x2="256" y2="370" stroke="white" stroke-width="16" stroke-linecap="round"/>
+  <circle cx="382" cy="170" r="26" fill="white"/>
+  <!-- Fletching -->
+  <path d="M240 345 L256 385 L272 345" stroke="white" stroke-width="18" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,1276 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>射形コーチ | 無料・スマホ優先 射形リアルタイム分析</title>
+  <meta name="description" content="すべての処理をブラウザ内で完結。カメラ映像は外部送信されません。無料でスマホ最適のPWAアーチェリー射形分析アプリ。">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0f172a">
+  <!-- MediaPipe (required, free CDN, official) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --bg-deep: #020617;
+      --card: #1e2937;
+      --card-border: #334155;
+      --accent: #0ea5e9;
+      --text: #e2e8f0;
+      --text-muted: #64748b;
+      --good: #22c55e;
+      --warn: #eab308;
+      --bad: #ef4444;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0; padding: 0;
+      background: var(--bg-deep);
+      color: var(--text);
+      font-family: system-ui, -apple-system, "Segoe UI", "Noto Sans JP", sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 12px 14px 24px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo-mark {
+      width: 42px; height: 42px;
+      background: linear-gradient(145deg, var(--accent), #036aa3);
+      border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      color: white;
+      font-size: 22px;
+      box-shadow: 0 2px 4px rgb(0 0 0 / 0.3);
+    }
+    .title { font-size: 21px; font-weight: 700; letter-spacing: -0.4px; }
+    .subtitle { font-size: 10px; color: var(--text-muted); margin-top: -2px; }
+
+    .top-controls { display: flex; align-items: center; gap: 8px; }
+    .hand-toggle {
+      display: flex; background: #1e2937; border: 1px solid var(--card-border);
+      border-radius: 999px; padding: 2px; font-size: 13px;
+    }
+    .hand-btn {
+      padding: 6px 14px; border-radius: 999px; border: none; background: transparent;
+      color: #94a3b8; font-weight: 600; cursor: pointer;
+    }
+    .hand-btn.active { background: var(--accent); color: white; }
+
+    .icon-btn {
+      width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+      background: #1e2937; border: 1px solid var(--card-border); border-radius: 12px;
+      font-size: 18px; cursor: pointer;
+    }
+    .icon-btn:active { transform: scale(0.95); }
+
+    .video-wrapper {
+      position: relative;
+      background: #000;
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.4);
+      border: 1px solid #1e2937;
+    }
+    #video {
+      width: 100%;
+      height: auto;
+      display: block;
+      background: #000;
+    }
+    #overlay {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+    .video-status {
+      position: absolute; top: 10px; left: 10px;
+      background: rgba(15,23,42,0.85); border: 1px solid rgba(255,255,255,0.1);
+      padding: 4px 10px; border-radius: 999px; font-size: 12px;
+      display: flex; align-items: center; gap: 6px; backdrop-filter: blur(4px);
+    }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #64748b; }
+    .status-dot.active { background: #22c55e; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+
+    .live-info {
+      position: absolute; top: 10px; right: 10px;
+      display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+    }
+    .phase-badge {
+      font-size: 12px; font-weight: 700; padding: 3px 11px; border-radius: 999px;
+      background: #1e2937; color: var(--accent); border: 1px solid #0e7490;
+    }
+    .phase-badge.release { background: #eab308; color: #000; border: none; }
+    .phase-badge.fulldraw { background: var(--accent); color: #000; border: none; }
+
+    .score-pill {
+      background: rgba(15,23,42,0.85); border: 1px solid rgba(255,255,255,0.1);
+      padding: 2px 10px; border-radius: 999px; font-size: 11px; display: flex; align-items: baseline; gap: 4px;
+    }
+    .score-value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+    .start-overlay {
+      position: absolute; inset: 0;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.25), rgba(0,0,0,0.55));
+      display: flex; align-items: center; justify-content: center;
+    }
+    .start-btn {
+      background: white; color: #0f172a; font-weight: 700; font-size: 15px;
+      padding: 12px 24px; border-radius: 16px; border: none; box-shadow: 0 4px 12px rgb(0 0 0 / 0.3);
+      display: flex; align-items: center; gap: 8px; cursor: pointer;
+    }
+    .start-btn:active { transform: scale(0.985); }
+
+    .cam-controls { display: flex; gap: 8px; margin-top: 10px; }
+    .btn {
+      flex: 1; padding: 10px 16px; border-radius: 14px; font-weight: 600; font-size: 14px;
+      border: 1px solid var(--card-border); background: #1e2937; color: var(--text);
+      cursor: pointer; min-height: 44px;
+    }
+    .btn:active { background: #334155; transform: scale(0.985); }
+    .btn-primary { background: var(--accent); color: white; border: none; }
+    .btn-danger { background: #3f1f1f; color: #fca5a5; border-color: #7f1d1d; }
+
+    .section-label {
+      font-size: 12px; font-weight: 600; color: var(--text-muted);
+      margin: 12px 0 6px; letter-spacing: -.2px;
+    }
+
+    .metrics-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+    }
+    .metric-card {
+      background: #1e2937; border: 1px solid var(--card-border);
+      border-radius: 14px; padding: 9px 11px; font-size: 13px;
+    }
+    .metric-card.good { border-color: #166534; background: rgba(34,197,94,0.08); }
+    .metric-card.warn { border-color: #854d0e; background: rgba(234,179,8,0.08); }
+    .metric-card.bad  { border-color: #991b1b; background: rgba(239,68,68,0.08); }
+    .metric-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2px; }
+    .metric-name { font-weight: 500; }
+    .metric-score { font-size: 11px; font-family: ui-monospace, monospace; background: rgba(0,0,0,0.3); padding: 1px 5px; border-radius: 6px; }
+    .metric-value { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .metric-status { font-size: 11px; }
+
+    .advice-panel {
+      background: #1e2937; border: 1px solid var(--card-border);
+      border-radius: 16px; padding: 10px; min-height: 118px; max-height: 168px;
+      overflow-y: auto; font-size: 13.5px;
+    }
+    .advice-item {
+      padding: 7px 10px; border-radius: 12px; margin-bottom: 5px; display: flex; gap: 8px;
+      border: 1px solid transparent;
+    }
+    .advice-item.good { background: rgba(34,197,94,0.12); border-color: #166534; color: #86efac; }
+    .advice-item.warn { background: rgba(234,179,8,0.12); border-color: #854d0e; color: #fde047; }
+    .advice-item.bad  { background: rgba(239,68,68,0.12); border-color: #991b1b; color: #fca5a5; }
+
+    .history-scroll {
+      display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; -webkit-overflow-scrolling: touch;
+    }
+    .history-card {
+      flex: 0 0 128px; background: #1e2937; border: 1px solid var(--card-border);
+      border-radius: 14px; padding: 8px 10px; font-size: 12px; cursor: pointer;
+    }
+    .history-card:active { border-color: var(--accent); }
+
+    .save-banner {
+      background: #1e3a8a; border: 1px solid #3b82f6; color: #bae6fd;
+      padding: 8px 12px; border-radius: 12px; display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; margin: 8px 0;
+    }
+    .save-btn {
+      background: #3b82f6; color: white; border: none; padding: 6px 14px;
+      border-radius: 10px; font-weight: 600; font-size: 13px; cursor: pointer; min-height: 36px;
+    }
+
+    .security-note {
+      font-size: 10px; color: #64748b; text-align: center; margin-top: 16px; line-height: 1.35;
+    }
+    .security-note strong { color: #94a3b8; }
+
+    .modal {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 100;
+      display: none; align-items: flex-end;
+    }
+    .modal.show { display: flex; }
+    .modal-content {
+      background: #1e2937; width: 100%; border-top-left-radius: 18px; border-top-right-radius: 18px;
+      padding: 16px; border: 1px solid var(--card-border);
+    }
+    @media (min-width: 640px) {
+      .modal { align-items: center; }
+      .modal-content { max-width: 420px; border-radius: 18px; }
+    }
+
+    .wake-btn { font-size: 12px; padding: 4px 10px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo">
+        <div class="logo-mark">🏹</div>
+        <div>
+          <div class="title">射形コーチ</div>
+          <div class="subtitle">FREE • MOBILE • PRIVATE</div>
+        </div>
+      </div>
+      <div class="top-controls">
+        <div class="hand-toggle">
+          <button id="btn-right" class="hand-btn active" onclick="setHandedness('right')">右利き</button>
+          <button id="btn-left" class="hand-btn" onclick="setHandedness('left')">左利き</button>
+        </div>
+        <button class="icon-btn" onclick="showSettings()" aria-label="設定">⚙</button>
+        <button class="icon-btn" onclick="showHowTo()" aria-label="使い方">?</button>
+      </div>
+    </div>
+
+    <!-- Video Area -->
+    <div class="video-wrapper" style="aspect-ratio: 16 / 9;">
+      <video id="video" autoplay playsinline muted style="width:100%; height:100%; object-fit:cover;"></video>
+      <canvas id="overlay" style="width:100%; height:100%;"></canvas>
+
+      <div id="video-status" class="video-status">
+        <div id="status-dot" class="status-dot"></div>
+        <span id="status-text">カメラ停止中</span>
+      </div>
+
+      <div id="live-info" class="live-info" style="display:none;">
+        <div id="phase-badge" class="phase-badge">待機中</div>
+        <div class="score-pill">
+          <span style="font-size:10px; color:#64748b;">FORM</span>
+          <span id="live-score" class="score-value">—</span>
+        </div>
+      </div>
+
+      <div id="start-overlay" class="start-overlay">
+        <button class="start-btn" onclick="startCamera()">
+          📷 カメラで分析を開始
+        </button>
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="cam-controls">
+      <button id="btn-camera" class="btn" onclick="toggleCamera()">▶ カメラ開始</button>
+      <button class="btn" onclick="switchCamera()">切替</button>
+      <button class="btn" onclick="takeSnapshot()">スナップ</button>
+    </div>
+    <div style="text-align:center; font-size:10px; color:#64748b; margin:6px 0 4px;">
+      横（サイドビュー）推奨。十分な明るさで上半身全体を映してください。
+    </div>
+
+    <!-- Offline Preparation UI (完全オフライン対応) -->
+    <div id="offline-section" style="margin: 8px 0 12px; background:#1e2937; border:1px solid #334155; border-radius:14px; padding:10px 12px; font-size:13px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+        <div>
+          <div style="font-weight:600;">オフライン準備状況</div>
+          <div id="offline-status" style="font-size:12px; color:#64748b;">確認中...</div>
+        </div>
+        <button id="prepare-btn" onclick="prepareForOffline()" 
+                style="background:#0ea5e9; color:white; border:none; padding:8px 14px; border-radius:10px; font-size:13px; font-weight:600; min-height:36px; white-space:nowrap;">
+          オフライン準備
+        </button>
+      </div>
+      <div style="font-size:10px; color:#64748b; margin-top:6px; line-height:1.3;">
+        初回のみインターネットで「オフライン準備」を実行（モデル数MB〜十数MB）。<br>
+        <strong>iOS Safari + このLAN HTTPサーバーでは Cache API が使えない</strong>ためエラーが出やすいです。<br>
+        モデルは IndexedDB に生データを保存し、blob URL でロードするようにしてオフライン対応を強化しました。<br>
+        <strong>本番はHTTPS（GitHub Pagesなど）にデプロイ推奨</strong>でフルPWAオフラインが安定します。
+      </div>
+    </div>
+
+    <!-- Metrics -->
+    <div class="section-label">リアルタイム指標（ブラウザ内処理）</div>
+    <div id="metrics-grid" class="metrics-grid">
+      <!-- JS populated -->
+    </div>
+    <div style="font-size:10px; color:#64748b; text-align:right; margin-top:2px;">
+      <span id="confidence-text">信頼度 --</span>
+    </div>
+
+    <!-- Pending Save Banner (explicit consent) -->
+    <div id="save-banner" class="save-banner" style="display:none;">
+      <div style="font-size:13px;">リリースを検知しました。<br>この分析を保存しますか？</div>
+      <button class="save-btn" onclick="savePendingShot()">保存する</button>
+    </div>
+
+    <!-- Advice -->
+    <div class="section-label">現在のアドバイス</div>
+    <div id="advice-panel" class="advice-panel">
+      <div id="advice-list"></div>
+      <div id="advice-empty" style="color:#64748b; font-size:12px; text-align:center; padding:12px 0;">
+        カメラを開始するとここにアドバイスが表示されます
+      </div>
+    </div>
+
+    <!-- Wake Lock -->
+    <div style="margin-top:6px;">
+      <button id="wake-btn" class="btn wake-btn" onclick="toggleWakeLock()" style="width:auto; padding:6px 12px; font-size:12px;">
+        画面常時ON（練習中おすすめ）
+      </button>
+      <span id="wake-status" style="font-size:11px; color:#64748b; margin-left:8px;"></span>
+    </div>
+
+    <!-- History -->
+    <div class="section-label" style="margin-top:14px;">
+      履歴（明示的に「保存する」を押したもののみ端末に残ります）
+    </div>
+    <div id="history-scroll" class="history-scroll"></div>
+    <div style="display:flex; gap:8px; margin-top:4px;">
+      <button class="btn" style="flex:1; font-size:12px; padding:8px;" onclick="exportHistory()">JSONエクスポート</button>
+      <button class="btn" style="flex:1; font-size:12px; padding:8px; color:#fca5a5;" onclick="clearAllHistory()">すべて削除</button>
+    </div>
+
+    <!-- Security note -->
+    <div class="security-note">
+      <strong>セキュリティ：</strong> カメラ映像・分析結果はすべてこのブラウザ内で処理・表示されます。<br>
+      外部サーバーへの送信・自動保存・ログ記録は一切行いません。<br>
+      保存はユーザーが「保存する」を押した場合のみ行われます。
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal" onclick="if (event.target.id==='settings-modal') hideSettings()">
+    <div class="modal-content" onclick="event.stopImmediatePropagation()">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <div style="font-weight:700; font-size:17px;">設定</div>
+        <button onclick="hideSettings()" style="font-size:24px; line-height:1; color:#64748b; background:none; border:none;">×</button>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div style="font-size:12px; color:#64748b; margin-bottom:4px;">モデル精度（無料）</div>
+        <select id="model-select" style="width:100%; background:#0f172a; color:#e2e8f0; border:1px solid #334155; border-radius:10px; padding:8px; font-size:14px;">
+          <option value="lite">Lite（高速・スマホ推奨）</option>
+          <option value="full">Full（高精度・PC推奨）</option>
+        </select>
+        <div style="font-size:10px; color:#64748b; margin-top:3px;">初回のみ数MB〜15MB程度のモデルをダウンロード（無料公開モデル）</div>
+      </div>
+
+      <div style="margin-bottom:14px;">
+        <div style="font-size:12px; color:#64748b; margin-bottom:4px;">リリース検知の感度</div>
+        <input type="range" id="release-sens" min="0.6" max="2.0" step="0.1" value="1.2" style="width:100%; accent-color:#0ea5e9;">
+        <div style="display:flex; justify-content:space-between; font-size:10px; color:#64748b;">
+          <span>敏感</span><span>標準</span><span>鈍感</span>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:center; justify-content:space-between; font-size:14px; padding:4px 0;">
+        <div>ミラーリング（自分撮り向け）</div>
+        <input type="checkbox" id="mirror-toggle" checked onchange="applyMirror()" style="width:18px; height:18px;">
+      </div>
+
+      <div style="margin-top:16px;">
+        <button onclick="reloadModelAndHide()" style="width:100%; padding:10px; border-radius:12px; background:#1e2937; color:#e2e8f0; border:1px solid #334155; font-weight:600;">
+          モデルを再読み込み
+        </button>
+      </div>
+      <div style="font-size:10px; color:#64748b; text-align:center; margin-top:10px;">
+        すべての処理はブラウザ内で完結します
+      </div>
+    </div>
+  </div>
+
+  <!-- How To Modal -->
+  <div id="howto-modal" class="modal" onclick="if (event.target.id==='howto-modal') hideHowTo()">
+    <div class="modal-content" onclick="event.stopImmediatePropagation()">
+      <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+        <div style="font-weight:700;">使い方・コツ（無料・プライベート）</div>
+        <button onclick="hideHowTo()" style="font-size:22px; line-height:1; background:none; border:none; color:#64748b;">×</button>
+      </div>
+      <div style="font-size:13.5px; color:#cbd5e1; line-height:1.6;">
+        <p>1. 横（サイドビュー）または斜め前から上半身がよく見える位置にスマホを固定。</p>
+        <p>2. 明るい場所で撮影。逆光は避ける。</p>
+        <p>3. 右利き／左利きを正しく選択。</p>
+        <p>4. リリース（離れ）を検知したら「保存する」ボタンを押すと明示的に履歴に残ります。</p>
+        <p style="margin-top:10px; font-size:12px; color:#64748b;">
+          このアプリは完全に無料の範囲で動作します。<br>
+          カメラ映像は一切外部に送信されません。<br>
+          保存はあなたがボタンを押したときのみ行われます。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==================== STATE & CONFIG (strict client-side only) ====================
+    let poseLandmarker = null;
+    let webcamRunning = false;
+    let lastVideoTime = -1;
+    let animationFrame = null;
+    let videoStream = null;
+    let currentFacing = "user";
+    let handedness = "right";
+    let modelType = "lite";
+    let releaseSensitivity = 1.2;
+    let mirror = true;
+
+    let poseHistory = [];
+    const MAX_HISTORY = 26;
+
+    // In-memory only for current session (never auto-persisted)
+    let sessionShots = [];
+    // Persisted only when user explicitly clicks "保存する"
+    let savedShots = [];
+
+    let currentMetrics = null;
+    let lastReleaseTs = 0;
+    let pendingShot = null; // {metrics, phase, advice, ts}
+
+    let wakeLock = null;
+
+    const LM = {
+      NOSE: 0, LEFT_EYE: 2, RIGHT_EYE: 5, LEFT_EAR: 7, RIGHT_EAR: 8,
+      LEFT_SHOULDER: 11, RIGHT_SHOULDER: 12,
+      LEFT_ELBOW: 13, RIGHT_ELBOW: 14,
+      LEFT_WRIST: 15, RIGHT_WRIST: 16,
+      LEFT_HIP: 23, RIGHT_HIP: 24
+    };
+
+    const MODEL_URLS = {
+      lite: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task",
+      full: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task"
+    };
+
+    const BUNDLE_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs';
+    const WASM_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm';
+
+    // IDB helpers for storing model bytes locally (works even without Cache API)
+    async function saveModelToIDB(url, buffer) {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open('archery-form-models', 1);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains('models')) db.createObjectStore('models');
+        };
+        req.onsuccess = (e) => {
+          const db = e.target.result;
+          const tx = db.transaction('models', 'readwrite');
+          const store = tx.objectStore('models');
+          store.put(buffer, url);
+          tx.oncomplete = () => resolve();
+          tx.onerror = (e) => reject(e.target.error);
+        };
+        req.onerror = (e) => reject(e.target.error);
+      });
+    }
+
+    async function loadModelFromIDB(url) {
+      return new Promise((resolve, reject) => {
+        const req = indexedDB.open('archery-form-models', 1);
+        req.onupgradeneeded = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains('models')) db.createObjectStore('models');
+        };
+        req.onsuccess = (e) => {
+          const db = e.target.result;
+          if (!db.objectStoreNames.contains('models')) { resolve(null); return; }
+          const tx = db.transaction('models', 'readonly');
+          const store = tx.objectStore('models');
+          const getReq = store.get(url);
+          getReq.onsuccess = () => resolve(getReq.result);
+          getReq.onerror = (e) => reject(e.target.error);
+        };
+        req.onerror = (e) => reject(e.target.error);
+      });
+    }
+
+    function $(id) { return document.getElementById(id); }
+
+    function angleDeg(a, b, c) {
+      const v1x = a.x - b.x, v1y = a.y - b.y;
+      const v2x = c.x - b.x, v2y = c.y - b.y;
+      const dot = v1x*v2x + v1y*v2y;
+      const m1 = Math.hypot(v1x, v1y), m2 = Math.hypot(v2x, v2y);
+      if (m1 < 0.0001 || m2 < 0.0001) return 180;
+      let cos = Math.max(-1, Math.min(1, dot / (m1 * m2)));
+      return Math.acos(cos) * 180 / Math.PI;
+    }
+    function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+
+    function getVis(landmarks, idxs) {
+      let s = 0, c = 0;
+      idxs.forEach(i => { if (landmarks[i] && landmarks[i].visibility != null) { s += landmarks[i].visibility; c++; } });
+      return c ? s / c : 0.55;
+    }
+
+    // ==================== HANDEDNESS ====================
+    function setHandedness(h) {
+      handedness = h;
+      const r = $("btn-right"), l = $("btn-left");
+      r.classList.toggle("active", h === "right");
+      l.classList.toggle("active", h === "left");
+      if (webcamRunning) {
+        updateAdvicePanel([]);
+        hidePending();
+      }
+    }
+
+    // ==================== METRICS (same logic) ====================
+    function computeMetrics(landmarks) {
+      if (!landmarks || !landmarks.length) return null;
+      const l = landmarks[0];
+      const righty = handedness === "right";
+
+      const bS = righty ? l[LM.LEFT_SHOULDER] : l[LM.RIGHT_SHOULDER];
+      const bE = righty ? l[LM.LEFT_ELBOW] : l[LM.RIGHT_ELBOW];
+      const bW = righty ? l[LM.LEFT_WRIST] : l[LM.RIGHT_WRIST];
+      const dS = righty ? l[LM.RIGHT_SHOULDER] : l[LM.LEFT_SHOULDER];
+      const dE = righty ? l[LM.RIGHT_ELBOW] : l[LM.LEFT_ELBOW];
+      const dW = righty ? l[LM.RIGHT_WRIST] : l[LM.LEFT_WRIST];
+      const nose = l[LM.NOSE];
+      const lHip = l[LM.LEFT_HIP], rHip = l[LM.RIGHT_HIP];
+
+      if (!bS || !bE || !bW || !dS || !dE || !dW || !nose) return null;
+
+      const bowArm = angleDeg(bS, bE, bW);
+      let bowScore = Math.max(0, Math.min(100, (bowArm - 135) / 50 * 100));
+      if (bowArm > 185) bowScore = Math.max(0, 100 - (bowArm - 185) * 6);
+
+      const drawArm = angleDeg(dS, dE, dW);
+      let drawScore = Math.max(0, Math.min(100, (drawArm - 140) / 50 * 100));
+
+      const shDiff = Math.abs((dS.y - bS.y) * 100);
+      let shScore = Math.max(0, 100 - shDiff * 3.5);
+
+      const midShY = (bS.y + dS.y) / 2;
+      const headOff = Math.abs(nose.y - midShY);
+      let headScore = Math.max(0, 100 - headOff * 280);
+
+      const ancD = dist(dW, nose);
+      let ancScore = 100;
+      if (ancD > 0.22) ancScore = 30;
+      else if (ancD > 0.17) ancScore = 70;
+      else if (ancD < 0.05) ancScore = 55;
+
+      const bodyLean = Math.abs(midShY - (lHip.y + rHip.y) / 2) * 100;
+      let leanScore = Math.max(0, 100 - bodyLean * 2.8);
+
+      const vis = getVis(l, [LM.LEFT_SHOULDER, LM.RIGHT_SHOULDER, LM.LEFT_ELBOW, LM.RIGHT_ELBOW, LM.LEFT_WRIST, LM.RIGHT_WRIST, LM.NOSE]);
+
+      return {
+        bowArmAngle: Math.round(bowArm), bowArmScore: Math.round(bowScore),
+        drawArmAngle: Math.round(drawArm), drawElbowScore: Math.round(drawScore),
+        shoulderDiff: Math.round(shDiff), shoulderScore: Math.round(shScore),
+        headOffset: headOff.toFixed(3), headScore: Math.round(headScore),
+        anchorDist: ancD.toFixed(3), anchorScore: Math.round(ancScore),
+        leanScore: Math.round(leanScore),
+        confidence: Math.round(vis * 100),
+        drawWrist: dW, bowWrist: bW, nose, drawElbow: dE, drawShoulder: dS, bowElbow: bE, bowShoulder: bS
+      };
+    }
+
+    // ==================== PHASE + RELEASE (client only) ====================
+    function computeVel(prev, curr, dt) {
+      if (!prev || !curr || dt < 0.001) return { speed: 0 };
+      return { speed: Math.hypot(curr.x - prev.x, curr.y - prev.y) * 1000 / dt };
+    }
+
+    function detectPhase(metrics, prevM) {
+      if (!metrics) return { phase: "IDLE", released: false };
+      const now = Date.now();
+      const close = parseFloat(metrics.anchorDist) < 0.19;
+      const speed = (poseHistory.length > 1) ? (poseHistory[poseHistory.length-1].vel?.speed || 0) : 0;
+
+      let phase = "SETUP";
+      let released = false;
+
+      if (close && metrics.drawArmAngle > 145) phase = "FULL_DRAW";
+      else if (speed > 12 && !close) phase = "DRAWING";
+      else if (close) phase = "ANCHORING";
+
+      if (poseHistory.length > 3 && prevM) {
+        const speeds = poseHistory.slice(-5).map(p => p.vel?.speed || 0);
+        const maxS = Math.max(...speeds);
+        const prevClose = parseFloat(prevM.anchorDist || 1) < 0.19;
+        if (maxS > 38 * releaseSensitivity && prevClose && !close && (now - lastReleaseTs) > 850) {
+          released = true;
+          lastReleaseTs = now;
+          phase = "RELEASE";
+        }
+      }
+      if ((now - lastReleaseTs) < 850 && (now - lastReleaseTs) > 100) phase = "FOLLOW";
+      return { phase, released };
+    }
+
+    // ==================== ADVICE (Japanese) ====================
+    function generateAdvice(m, phase) {
+      if (!m) return [];
+      const out = [];
+      if (m.bowArmScore < 55) out.push({type:"bad", text:"弓腕が大きく曲がっています。肘を軽く伸ばして一直線に近づけましょう。"});
+      else if (m.bowArmScore < 78) out.push({type:"warn", text:"弓腕の伸びがやや不足。もう少し肘を伸ばしてみてください。"});
+      else out.push({type:"good", text:"弓腕が良く伸びています。"});
+
+      if (m.drawElbowScore < 50) out.push({type:"bad", text:"引き肘の位置が理想的ではありません。肘を少し上げてラインを揃えましょう。"});
+      else if (m.drawElbowScore < 75) out.push({type:"warn", text:"引き肘の軌道を意識。肩と肘と手首をできるだけ一直線に。"});
+
+      if (m.shoulderScore < 55) out.push({type:"bad", text:"肩のラインが崩れています。両肩を水平に保ちましょう。"});
+      else if (m.shoulderScore < 78) out.push({type:"warn", text:"肩の位置がややずれています。リラックスして両肩を落として。"});
+
+      if (m.headScore < 52) out.push({type:"bad", text:"頭の位置が安定していません。首を真っ直ぐに保ち、耳と肩のラインを意識。"});
+      else if (m.headScore < 76) out.push({type:"warn", text:"頭が少し傾いている可能性があります。視線を矢のラインに。"});
+
+      if ((phase === "FULL_DRAW" || phase === "ANCHORING") && m.anchorScore < 55)
+        out.push({type:"bad", text:"アンカー位置が安定していません。顎や耳の固定点にしっかり引きつけましょう。"});
+      else if ((phase === "FULL_DRAW" || phase === "ANCHORING") && m.anchorScore < 78)
+        out.push({type:"warn", text:"アンカーの深さがやや浅い/深いようです。一貫した位置を。"});
+
+      if (m.leanScore < 60) out.push({type:"warn", text:"体が前や横に傾き気味。腰と肩を垂直に保って安定した土台を。"});
+
+      if (phase === "RELEASE") out.push({type:"good", text:"リリースを検知しました。手がきれいに後ろに流れたか確認を。"});
+      if (phase === "FOLLOW") out.push({type:"warn", text:"フォロースルー中。弓腕が突っ込んだり急に落ちていないかチェック。"});
+
+      return out.slice(0, 4);
+    }
+
+    function updateAdvice(list) {
+      const wrap = $("advice-list");
+      const empty = $("advice-empty");
+      wrap.innerHTML = "";
+      if (!list || !list.length) { empty.style.display = "block"; return; }
+      empty.style.display = "none";
+      list.forEach(a => {
+        const d = document.createElement("div");
+        d.className = `advice-item ${a.type}`;
+        const ico = a.type === "bad" ? "✕" : a.type === "warn" ? "！" : "✓";
+        d.innerHTML = `<span style="font-weight:700; margin-top:1px;">${ico}</span><span>${a.text}</span>`;
+        wrap.appendChild(d);
+      });
+    }
+
+    // ==================== DRAW (with mirror handling) ====================
+    function draw(canvas, ctx, lms, m, phase) {
+      if (!lms || !lms.length) return;
+      const l = lms[0];
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0, 0, w, h);
+
+      const righty = handedness === "right";
+      const mir = mirror;
+
+      function fx(p) { if (!p) return p; return {x: mir ? 1-p.x : p.x, y:p.y, visibility:p.visibility}; }
+
+      const bS = fx(righty ? l[LM.LEFT_SHOULDER] : l[LM.RIGHT_SHOULDER]);
+      const bE = fx(righty ? l[LM.LEFT_ELBOW] : l[LM.RIGHT_ELBOW]);
+      const bW = fx(righty ? l[LM.LEFT_WRIST] : l[LM.RIGHT_WRIST]);
+      const dS = fx(righty ? l[LM.RIGHT_SHOULDER] : l[LM.LEFT_SHOULDER]);
+      const dE = fx(righty ? l[LM.RIGHT_ELBOW] : l[LM.LEFT_ELBOW]);
+      const dW = fx(righty ? l[LM.RIGHT_WRIST] : l[LM.LEFT_WRIST]);
+      const nose = fx(l[LM.NOSE]);
+
+      ctx.strokeStyle = "rgba(14,165,233,0.75)"; ctx.lineWidth = 4;
+      const conns = [[bS,bE],[bE,bW],[dS,dE],[dE,dW],[bS,dS],[bS,nose],[dS,nose]];
+      conns.forEach(([p1,p2]) => { if (p1&&p2) { ctx.beginPath(); ctx.moveTo(p1.x*w, p1.y*h); ctx.lineTo(p2.x*w, p2.y*h); ctx.stroke(); } });
+
+      ctx.fillStyle = "#bae6fd"; ctx.strokeStyle = "#0e7490"; ctx.lineWidth = 1.5;
+      [bS,bE,bW,dS,dE,dW,nose].forEach(p => { if (p) { ctx.beginPath(); ctx.arc(p.x*w, p.y*h, 4.2, 0, Math.PI*2); ctx.fill(); ctx.stroke(); } });
+
+      if (bE && bW) { ctx.strokeStyle = "#22c55e"; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(bE.x*w, bE.y*h); ctx.lineTo(bW.x*w, bW.y*h); ctx.stroke(); }
+      if (dE && dW) { ctx.strokeStyle = "#f43f5e"; ctx.lineWidth = 4.2; ctx.beginPath(); ctx.moveTo(dE.x*w, dE.y*h); ctx.lineTo(dW.x*w, dW.y*h); ctx.stroke(); }
+
+      if (bS && bE && bW && m) {
+        ctx.fillStyle = "#fff"; ctx.font = "bold 11px system-ui";
+        ctx.fillText(m.bowArmAngle + "°", ((bE.x + bW.x)/2)*w + 7, ((bE.y + bW.y)/2)*h - 5);
+      }
+      if (phase === "RELEASE" || phase === "FOLLOW") {
+        ctx.strokeStyle = "#eab308"; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(dW.x*w, dW.y*h, 17, 0, Math.PI*2); ctx.stroke();
+        ctx.fillStyle = "#eab308"; ctx.font = "700 10px system-ui"; ctx.fillText("RELEASE", dW.x*w + 18, dW.y*h + 3);
+      }
+    }
+
+    // ==================== MEDIAPIPE + CAMERA ====================
+    async function loadLandmarker() {
+      const st = $("status-text");
+      st.textContent = "モデル読込中...";
+      try {
+        const { FilesetResolver, PoseLandmarker } = window;
+        if (!FilesetResolver || !PoseLandmarker) throw new Error("MediaPipe bundle not loaded");
+
+        const vision = await FilesetResolver.forVisionTasks(WASM_BASE);
+        const modelUrl = MODEL_URLS[modelType] || MODEL_URLS.lite;
+
+        // Prefer local IDB model (blob URL) so it works offline without network/SW
+        let modelAssetPath = modelUrl;
+        try {
+          const localBuffer = await loadModelFromIDB(modelUrl);
+          if (localBuffer) {
+            const blob = new Blob([localBuffer], { type: 'application/octet-stream' });
+            modelAssetPath = URL.createObjectURL(blob);
+            console.log('Using model from local IDB storage (offline capable)');
+          }
+        } catch (e) {
+          console.warn('Failed to load model from IDB, falling back to URL:', e);
+        }
+
+        poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+          baseOptions: { modelAssetPath: modelAssetPath, delegate: "GPU" },
+          runningMode: "VIDEO",
+          numPoses: 1,
+          minPoseDetectionConfidence: 0.5,
+          minPosePresenceConfidence: 0.5,
+          minTrackingConfidence: 0.45
+        });
+        st.textContent = "準備完了";
+        return true;
+      } catch (e) {
+        console.error(e);
+        st.textContent = "モデル読込失敗";
+        console.error('PoseLandmarker load failed:', err);
+        const errMsg = err && err.message ? err.message : String(err);
+        alert(`モデル読込に失敗しました。\nエラー詳細: ${errMsg}\n\n・初めての場合は「オフライン準備」ボタンを押してモデルをダウンロードしてください。\n・オフライン時はIDB/キャッシュからロードを試みます。\n・インターネット接続、準備の成功、HTTPS公開の有無を確認してください。`);
+        return false;
+      }
+    }
+
+    async function startCamera() {
+      const video = $("video");
+      const startO = $("start-overlay");
+      const live = $("live-info");
+      const st = $("status-text");
+
+      if (webcamRunning) return;
+      if (!poseLandmarker) {
+        const ok = await loadLandmarker();
+        if (!ok) return;
+      }
+
+      try {
+        videoStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: currentFacing, width: {ideal: 1280}, height: {ideal: 720} }
+        });
+        video.srcObject = videoStream;
+        video.style.transform = mirror ? "scaleX(-1)" : "scaleX(1)";
+
+        await new Promise(r => video.onloadedmetadata = () => video.play().then(r));
+
+        const ov = $("overlay");
+        ov.width = video.videoWidth || 1280;
+        ov.height = video.videoHeight || 720;
+
+        webcamRunning = true;
+        startO.style.display = "none";
+        live.style.display = "flex";
+        $("btn-camera").textContent = "■ 停止";
+        $("status-dot").className = "status-dot active";
+        st.textContent = "分析中";
+
+        predictLoop();
+      } catch (e) {
+        console.error(e);
+        alert("カメラの起動に失敗しました。ブラウザのカメラ許可を確認してください。");
+        st.textContent = "カメラエラー";
+      }
+    }
+
+    function stopCamera() {
+      webcamRunning = false;
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+      if (videoStream) { videoStream.getTracks().forEach(t => t.stop()); videoStream = null; }
+      $("video").srcObject = null;
+
+      const ov = $("overlay");
+      const ctx = ov.getContext("2d");
+      ctx && ctx.clearRect(0, 0, ov.width, ov.height);
+
+      $("start-overlay").style.display = "flex";
+      $("live-info").style.display = "none";
+      $("btn-camera").textContent = "▶ カメラ開始";
+      $("status-dot").className = "status-dot";
+      $("status-text").textContent = "カメラ停止中";
+
+      updateLive(null, "IDLE");
+      updateAdvice([]);
+      hidePending();
+      poseHistory = [];
+      if (wakeLock) releaseWakeLock();
+    }
+
+    function toggleCamera() { webcamRunning ? stopCamera() : startCamera(); }
+
+    async function switchCamera() {
+      const was = webcamRunning;
+      if (was) stopCamera();
+      currentFacing = currentFacing === "user" ? "environment" : "user";
+      if (was) setTimeout(startCamera, 140);
+    }
+
+    function applyMirror() {
+      mirror = $("mirror-toggle").checked;
+      const v = $("video");
+      if (v) v.style.transform = mirror ? "scaleX(-1)" : "scaleX(1)";
+    }
+
+    async function predictLoop() {
+      if (!webcamRunning || !poseLandmarker) return;
+      const video = $("video");
+      const ov = $("overlay");
+      const ctx = ov.getContext("2d");
+
+      if (video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+        const res = await poseLandmarker.detectForVideo(video, performance.now());
+
+        if (res.poseLandmarks && res.poseLandmarks.length) {
+          const lms = res.poseLandmarks;
+          const m = computeMetrics(lms);
+          currentMetrics = m;
+
+          const prev = poseHistory.length ? poseHistory[poseHistory.length-1] : null;
+          let vel = {speed:0};
+          if (prev && prev.m && m) vel = computeVel(prev.m.drawWrist, m.drawWrist, (Date.now()-prev.ts)/1000);
+
+          poseHistory.push({ts: Date.now(), m, vel, lms});
+          if (poseHistory.length > MAX_HISTORY) poseHistory.shift();
+
+          const p = prev ? prev.m : null;
+          const {phase, released} = detectPhase(m, p);
+
+          const adv = generateAdvice(m, phase);
+
+          if (ctx) draw(ov, ctx, lms, m, phase);
+          updateLive(m, phase);
+          updateAdvice(adv);
+
+          if (released) {
+            pendingShot = {metrics: m, phase, advice: adv, ts: Date.now()};
+            showPending();
+          }
+        } else {
+          if (ctx) ctx.clearRect(0, 0, ov.width, ov.height);
+          updateLive(null, "NO_PERSON");
+          updateAdvice([{type:"warn", text:"人物が検出できません。フレーム内に上半身を入れてください。"}]);
+        }
+      }
+      animationFrame = requestAnimationFrame(predictLoop);
+    }
+
+    function updateLive(m, phase) {
+      const sc = $("live-score");
+      const ph = $("phase-badge");
+      const labels = {IDLE:"待機中", SETUP:"構え", DRAWING:"引き分け", ANCHORING:"アンカー", FULL_DRAW:"フルドロー", RELEASE:"リリース！", FOLLOW:"フォロースルー", NO_PERSON:"未検出"};
+      ph.textContent = labels[phase] || phase || "—";
+      ph.className = "phase-badge" + (phase==="RELEASE" ? " release" : phase==="FULL_DRAW" ? " fulldraw" : "");
+
+      if (!m) { sc.textContent = "—"; renderMetrics(null); $("confidence-text").textContent = "信頼度 --"; return; }
+
+      const avg = Math.round((m.bowArmScore + m.drawElbowScore + m.shoulderScore + m.headScore + m.anchorScore + m.leanScore) / 6);
+      sc.textContent = avg;
+      $("confidence-text").textContent = `信頼度 ${m.confidence}%`;
+      renderMetrics(m);
+    }
+
+    function renderMetrics(m) {
+      const g = $("metrics-grid");
+      g.innerHTML = "";
+      if (!m) {
+        g.innerHTML = `<div style="grid-column:1/-1; text-align:center; padding:14px 0; border:1px solid #334155; border-radius:14px; color:#64748b; font-size:12px;">指標はカメラ起動後に表示されます</div>`;
+        return;
+      }
+      const items = [
+        {n:"弓腕の伸び", v:m.bowArmAngle+"°", s:m.bowArmScore},
+        {n:"引き肘位置", v:m.drawArmAngle+"°", s:m.drawElbowScore},
+        {n:"肩の平行度", v:m.shoulderDiff, s:m.shoulderScore},
+        {n:"頭の位置", v:m.headOffset, s:m.headScore},
+        {n:"アンカー距離", v:m.anchorDist, s:m.anchorScore},
+        {n:"姿勢バランス", v:"—", s:m.leanScore}
+      ];
+      items.forEach(it => {
+        const st = it.s >= 78 ? "good" : it.s >= 55 ? "warn" : "bad";
+        const d = document.createElement("div");
+        d.className = `metric-card ${st}`;
+        d.innerHTML = `
+          <div class="metric-header">
+            <div class="metric-name">${it.n}</div>
+            <div class="metric-score">${it.s}</div>
+          </div>
+          <div style="display:flex; align-items:baseline; justify-content:space-between;">
+            <div class="metric-value">${it.v}</div>
+            <div class="metric-status" style="color:${st==="good"?"#22c55e":st==="warn"?"#eab308":"#ef4444"}">
+              ${st==="good"?"良好":st==="warn"?"注意":"要改善"}
+            </div>
+          </div>`;
+        g.appendChild(d);
+      });
+    }
+
+    // ==================== EXPLICIT SAVE ONLY ====================
+    function showPending() {
+      const b = $("save-banner");
+      b.style.display = "flex";
+    }
+    function hidePending() {
+      $("save-banner").style.display = "none";
+      pendingShot = null;
+    }
+
+    function savePendingShot() {
+      if (!pendingShot) return;
+      const entry = {
+        id: pendingShot.ts,
+        ts: new Date(pendingShot.ts).toISOString(),
+        score: Math.round((pendingShot.metrics.bowArmScore + pendingShot.metrics.drawElbowScore +
+                           pendingShot.metrics.shoulderScore + pendingShot.metrics.headScore +
+                           pendingShot.metrics.anchorScore + pendingShot.metrics.leanScore)/6),
+        phase: pendingShot.phase,
+        summary: (pendingShot.advice && pendingShot.advice[0]) ? pendingShot.advice[0].text : "保存された分析",
+        metrics: {
+          bowArmAngle: pendingShot.metrics.bowArmAngle,
+          shoulderScore: pendingShot.metrics.shoulderScore,
+          anchorDist: pendingShot.metrics.anchorDist
+        }
+      };
+      savedShots.unshift(entry);
+      if (savedShots.length > 50) savedShots.pop();
+      try { localStorage.setItem("archery_form_saved", JSON.stringify(savedShots)); } catch(e){}
+      renderHistory();
+      hidePending();
+      // keep a copy in session too for convenience
+      sessionShots.unshift(entry);
+    }
+
+    function loadPersisted() {
+      try {
+        const raw = localStorage.getItem("archery_form_saved");
+        if (raw) savedShots = JSON.parse(raw);
+      } catch(e){}
+      renderHistory();
+    }
+
+    function renderHistory() {
+      const sc = $("history-scroll");
+      sc.innerHTML = "";
+      const all = [...savedShots]; // only explicitly saved ones are shown persistently
+      if (!all.length) {
+        const d = document.createElement("div");
+        d.style.cssText = "color:#64748b; font-size:12px; padding:8px 4px; white-space:nowrap;";
+        d.textContent = "「保存する」を押した分析のみここに残ります（このセッション中も一時的に表示）";
+        sc.appendChild(d);
+        return;
+      }
+      all.slice(0, 10).forEach(entry => {
+        const c = document.createElement("div");
+        c.className = "history-card";
+        const t = new Date(entry.ts).toLocaleTimeString("ja-JP", {hour:"2-digit", minute:"2-digit"});
+        c.innerHTML = `<div style="font-size:18px; font-weight:700;">${entry.score}</div>
+                       <div style="font-size:10px; color:#64748b;">${t} ${entry.phase || ""}</div>
+                       <div style="font-size:10px; color:#94a3b8; margin-top:3px; line-height:1.2;">${entry.summary}</div>`;
+        c.onclick = () => showDetail(entry);
+        sc.appendChild(c);
+      });
+    }
+
+    function showDetail(e) {
+      const html = `
+        <div style="position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:200; display:flex; align-items:center; justify-content:center;" onclick="this.remove()">
+          <div onclick="event.stopImmediatePropagation()" style="background:#1e2937; border:1px solid #334155; border-radius:16px; max-width:340px; width:92%; padding:16px;">
+            <div style="display:flex; justify-content:space-between;">
+              <div><div style="font-size:11px; color:#64748b;">FORM SCORE</div><div style="font-size:42px; font-weight:700; line-height:1;">${e.score}</div></div>
+              <div style="text-align:right; font-size:11px; color:#64748b;">${new Date(e.ts).toLocaleString("ja-JP")}</div>
+            </div>
+            <div style="margin:12px 0; font-size:13px; background:#0f172a; padding:10px; border-radius:12px; border:1px solid #334155;">
+              主な指摘：<br><span style="color:#7dd3fc;">${e.summary}</span>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; font-size:12px;">
+              <div style="background:#0f172a; padding:8px; border-radius:10px;">弓腕 ${e.metrics.bowArmAngle}°</div>
+              <div style="background:#0f172a; padding:8px; border-radius:10px;">肩スコア ${e.metrics.shoulderScore}</div>
+              <div style="background:#0f172a; padding:8px; border-radius:10px;">アンカー ${e.metrics.anchorDist}</div>
+              <div style="background:#0f172a; padding:8px; border-radius:10px;">フェーズ ${e.phase}</div>
+            </div>
+            <button onclick="this.closest('[style*=\"position:fixed\"]').remove()" style="margin-top:14px; width:100%; padding:10px; background:#0ea5e9; color:white; border:none; border-radius:12px; font-weight:600;">閉じる</button>
+          </div>
+        </div>`;
+      document.body.insertAdjacentHTML("beforeend", html);
+    }
+
+    function exportHistory() {
+      if (!savedShots.length) { alert("保存済みの履歴がありません"); return; }
+      const blob = new Blob([JSON.stringify(savedShots, null, 2)], {type:"application/json"});
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `archery-form-saved-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+    }
+
+    function clearAllHistory() {
+      if (!confirm("保存済みの履歴をすべて削除しますか？")) return;
+      savedShots = [];
+      localStorage.removeItem("archery_form_saved");
+      renderHistory();
+    }
+
+    // ==================== SNAPSHOT (user initiated) ====================
+    function takeSnapshot() {
+      const v = $("video"), ov = $("overlay");
+      if (!v || !v.videoWidth) { alert("カメラが起動していません"); return; }
+      const c = document.createElement("canvas");
+      c.width = v.videoWidth; c.height = v.videoHeight;
+      const cx = c.getContext("2d");
+      cx.save();
+      if (mirror) { cx.scale(-1,1); cx.drawImage(v, -c.width, 0); } else { cx.drawImage(v, 0, 0); }
+      cx.restore();
+      cx.drawImage(ov, 0, 0);
+      const a = document.createElement("a");
+      a.download = `archery-form-${Date.now()}.png`;
+      a.href = c.toDataURL("image/png");
+      a.click();
+    }
+
+    // ==================== WAKE LOCK (free, client-side) ====================
+    async function toggleWakeLock() {
+      const btn = $("wake-btn");
+      const st = $("wake-status");
+      try {
+        if (wakeLock) {
+          await wakeLock.release();
+          wakeLock = null;
+          st.textContent = "OFF";
+          btn.textContent = "画面常時ON（練習中おすすめ）";
+          return;
+        }
+        if ("wakeLock" in navigator) {
+          wakeLock = await navigator.wakeLock.request("screen");
+          wakeLock.addEventListener("release", () => { wakeLock = null; st.textContent = "OFF"; });
+          st.textContent = "ON";
+          btn.textContent = "画面常時ONを解除";
+        } else {
+          alert("このブラウザは画面常時ONをサポートしていません。");
+        }
+      } catch (e) { alert("画面常時ONの許可が必要です"); }
+    }
+    function releaseWakeLock() {
+      if (wakeLock) { wakeLock.release().catch(()=>{}); wakeLock = null; $("wake-status").textContent = ""; }
+    }
+
+    // ==================== SETTINGS & MODALS ====================
+    function showSettings() {
+      const m = $("settings-modal");
+      $("model-select").value = modelType;
+      $("release-sens").value = releaseSensitivity;
+      $("mirror-toggle").checked = mirror;
+      m.classList.add("show");
+    }
+    function hideSettings() {
+      const m = $("settings-modal");
+      m.classList.remove("show");
+      modelType = $("model-select").value;
+      releaseSensitivity = parseFloat($("release-sens").value);
+      mirror = $("mirror-toggle").checked;
+      applyMirror();
+    }
+    async function reloadModelAndHide() {
+      hideSettings();
+      if (webcamRunning) stopCamera();
+      poseLandmarker = null;
+      await loadLandmarker();
+    }
+    function showHowTo() { $("howto-modal").classList.add("show"); }
+    function hideHowTo() { $("howto-modal").classList.remove("show"); }
+
+    // ==================== OFFLINE PREPARATION (完全オフライン対応) ====================
+    // (BUNDLE_URL and WASM_BASE defined earlier for use in loadLandmarker too)
+
+    async function updateOfflineStatus() {
+      const statusEl = $('offline-status');
+      const btn = $('prepare-btn');
+      if (!statusEl || !btn) return;
+
+      const preparedFlag = localStorage.getItem('archery_form_offline_prepared') === 'true';
+
+      if (!('caches' in window)) {
+        if (preparedFlag) {
+          statusEl.textContent = '✓ オフライン準備済み（この環境ではCache API制限あり）';
+          statusEl.style.color = '#22c55e';
+          btn.textContent = '再ダウンロード';
+          btn.style.background = '#334155';
+        } else {
+          statusEl.textContent = 'キャッシュAPI非対応（PWAフルオフラインに制限あり。HTTPS推奨）';
+          statusEl.style.color = '#64748b';
+          btn.textContent = 'オフライン準備';
+          btn.style.background = '#0ea5e9';
+        }
+        return;
+      }
+
+      try {
+        const cache = await caches.open('archery-form-v3-offline');
+        const hasBundle = await cache.match(BUNDLE_URL);
+        const hasModelLite = await cache.match(MODEL_URLS.lite);
+        const hasModelFull = await cache.match(MODEL_URLS.full);
+
+        const hasModel = hasModelLite || hasModelFull;
+        const ready = hasBundle && hasModel;
+
+        if (ready) {
+          statusEl.textContent = '✓ オフライン準備済み（モデルキャッシュあり）';
+          statusEl.style.color = '#22c55e';
+          btn.textContent = '再ダウンロード';
+          btn.style.background = '#334155';
+        } else if (preparedFlag) {
+          statusEl.textContent = '✓ オフライン準備済み（詳細キャッシュ確認はブラウザ制限のため不可）';
+          statusEl.style.color = '#22c55e';
+          btn.textContent = '再ダウンロード';
+          btn.style.background = '#334155';
+        } else {
+          statusEl.textContent = hasBundle ? 'モデル未キャッシュ' : '未準備（初回はネット必須）';
+          statusEl.style.color = '#64748b';
+          btn.textContent = 'オフライン準備';
+          btn.style.background = '#0ea5e9';
+        }
+      } catch (e) {
+        console.warn('Cache status check failed:', e);
+        if (preparedFlag) {
+          statusEl.textContent = '✓ オフライン準備済み（詳細確認不可・制限あり）';
+          statusEl.style.color = '#22c55e';
+          btn.textContent = '再ダウンロード';
+          btn.style.background = '#334155';
+        } else {
+          statusEl.textContent = 'キャッシュ確認不可（非セキュアHTTPや制限のため）';
+        }
+      }
+    }
+
+    async function prepareForOffline() {
+      const btn = $('prepare-btn');
+      const statusEl = $('offline-status');
+      if (!btn || !statusEl) return;
+
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = '準備中...';
+      statusEl.textContent = 'ライブラリとモデルをダウンロード中（数MB〜十数MB）...';
+
+      const hasCaches = 'caches' in window;
+
+      try {
+        let cache = null;
+        if (hasCaches) {
+          cache = await caches.open('archery-form-v3-offline');
+        } else {
+          console.warn('caches API not available (common on iOS Safari over plain HTTP LAN IP). Will still attempt to load assets.');
+        }
+
+        // 1. Bundle
+        let res = await fetch(BUNDLE_URL, { mode: 'cors' });
+        if (!res.ok) throw new Error('Bundle download failed: ' + res.status);
+        if (cache) await cache.put(BUNDLE_URL, res.clone());
+
+        // 2. Trigger WASM + resolver (internal fetches for runtime)
+        const { FilesetResolver } = await import(BUNDLE_URL);
+        const vision = await FilesetResolver.forVisionTasks(WASM_BASE);
+
+        // 3. Model
+        const modelUrl = MODEL_URLS[modelType] || MODEL_URLS.lite;
+        res = await fetch(modelUrl, { mode: 'cors' });
+        if (!res.ok) throw new Error('Model download failed: ' + res.status);
+        const modelBuffer = await res.arrayBuffer();
+        if (cache) await cache.put(modelUrl, new Response(modelBuffer));  // re-wrap for cache
+
+        // Save to IDB for environments without Cache API (iOS HTTP LAN)
+        await saveModelToIDB(modelUrl, modelBuffer);
+
+        // Mark as prepared for fallback (always set, even without full Cache API)
+        localStorage.setItem('archery_form_offline_prepared', 'true');
+
+        if (hasCaches) {
+          statusEl.textContent = '✓ オフライン準備完了！';
+          statusEl.style.color = '#22c55e';
+        } else {
+          statusEl.textContent = '✓ 資産ロード完了（この環境ではCache API制限あり。HTTPS公開でフルオフライン推奨）';
+          statusEl.style.color = '#eab308';
+        }
+        btn.textContent = '完了';
+        setTimeout(() => {
+          btn.textContent = '再ダウンロード';
+          btn.style.background = '#334155';
+          btn.disabled = false;
+          updateOfflineStatus();
+        }, 1400);
+      } catch (err) {
+        console.error('Offline preparation failed:', err);
+        const msg = err && err.message ? err.message : String(err);
+        if (msg.includes('caches') || msg.includes('Cache')) {
+          statusEl.textContent = 'このブラウザ/接続ではcaches APIが使えません（iOSのHTTPでは一般的）。HTTPSでアクセスするとオフライン準備がフルに動作します。';
+        } else {
+          statusEl.textContent = `準備に失敗しました: ${msg}。 ネット接続・VPN・ファイアウォール・広告ブロッカーを確認して再試行してください。`;
+        }
+        statusEl.style.color = '#ef4444';
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
+    }
+
+    // ==================== INIT (with offline status) ====================
+    function init() {
+      // Handedness default
+      setHandedness("right");
+
+      // Load explicitly saved only
+      loadPersisted();
+
+      // Settings persistence (local only)
+      try {
+        const s = JSON.parse(localStorage.getItem("archery_form_cfg") || "{}");
+        if (s.modelType) modelType = s.modelType;
+        if (s.releaseSensitivity) releaseSensitivity = s.releaseSensitivity;
+        if (typeof s.mirror === "boolean") mirror = s.mirror;
+      } catch(e){}
+
+      $("model-select").addEventListener("change", saveCfg);
+      $("release-sens").addEventListener("input", saveCfg);
+      function saveCfg() {
+        try {
+          localStorage.setItem("archery_form_cfg", JSON.stringify({
+            modelType: $("model-select").value,
+            releaseSensitivity: parseFloat($("release-sens").value),
+            mirror: $("mirror-toggle").checked
+          }));
+        } catch(e){}
+      }
+
+      // Keyboard (space = toggle camera)
+      document.addEventListener("keydown", e => {
+        if (e.key === " " && document.activeElement.tagName === "BODY") { e.preventDefault(); toggleCamera(); }
+      });
+
+      // PWA service worker (strict, offline capable)
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("sw.js")
+          .then(() => console.log('SW registered (may be limited on non-HTTPS LAN)'))
+          .catch(err => console.warn('SW register failed (expected on HTTP LAN IP):', err));
+      }
+
+      // Initial mirror
+      setTimeout(() => {
+        const v = $("video");
+        if (v) v.style.transform = mirror ? "scaleX(-1)" : "scaleX(1)";
+      }, 60);
+
+      // Offline status check
+      updateOfflineStatus();
+
+      // Show version hint
+      console.log("%c[射形コーチ] 完全クライアントサイド・無料・スマホ優先・完全オフライン対応版 初期化完了", "color:#64748b");
+    }
+
+    window.addEventListener("DOMContentLoaded", init);
+    window.ARCHERY_FORM = { start: () => startCamera(), stop: () => stopCamera() };
+  </script>
+</body>
+</html>
