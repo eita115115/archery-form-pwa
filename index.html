@@ -732,9 +732,19 @@
         }
         logDebug("Using modelAssetPath: " + modelAssetPath);
 
+        logDebug("Testing fetch for modelAssetPath...");
+        try {
+          const testRes = await fetch(modelAssetPath);
+          logDebug("Model fetch test status: " + testRes.status + " content-length: " + (testRes.headers.get('content-length') || 'unknown'));
+          if (!testRes.ok) throw new Error("Model file fetch failed with status " + testRes.status);
+        } catch (fetchErr) {
+          logDebug("Model fetch test failed: " + fetchErr);
+          throw fetchErr;
+        }
+
         logDebug("Calling createFromOptions...");
         poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-          baseOptions: { modelAssetPath: modelAssetPath, delegate: "GPU" },
+          baseOptions: { modelAssetPath: modelAssetPath, delegate: "CPU" },
           runningMode: "VIDEO",
           numPoses: 1,
           minPoseDetectionConfidence: 0.5,
