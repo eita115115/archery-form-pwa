@@ -448,6 +448,8 @@
       full: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task"
     };
 
+    const LOCAL_MODEL_PATH = './pose_landmarker_lite.task';  // bundled local model for reliable offline loading (included in GitHub Pages deploy)
+
     // Pinned version for consistency between bundle and WASM (avoids version mismatch issues)
     const BUNDLE_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.mjs';
     const WASM_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm';
@@ -707,10 +709,10 @@
         if (!FilesetResolver || !PoseLandmarker) throw new Error("MediaPipe bundle not loaded");
 
         const vision = await FilesetResolver.forVisionTasks(WASM_BASE);
+        // Prefer the bundled local model file (served with the PWA on GitHub Pages) for reliable loading without external network or SW dependency for the model itself.
+        // Fall back to IDB (from previous prep) or external URL if needed.
+        let modelAssetPath = LOCAL_MODEL_PATH;
         const modelUrl = MODEL_URLS[modelType] || MODEL_URLS.lite;
-
-        // Prefer local IDB model (blob URL) so it works offline without network/SW
-        let modelAssetPath = modelUrl;
         try {
           const localBuffer = await loadModelFromIDB(modelUrl);
           if (localBuffer) {
@@ -719,7 +721,7 @@
             console.log('Using model from local IDB storage (offline capable)');
           }
         } catch (e) {
-          console.warn('Failed to load model from IDB, falling back to URL:', e);
+          console.warn('Failed to load model from IDB, using bundled local file:', e);
         }
 
         poseLandmarker = await PoseLandmarker.createFromOptions(vision, {

@@ -9,7 +9,8 @@ const CORE_ASSETS = [
   './index.html',
   './manifest.json',
   './icon.svg',
-  './version.json'
+  './version.json',
+  './pose_landmarker_lite.task'  // bundled model for self-contained offline
 ];
 
 // Critical external assets for offline (MediaPipe free browser version)
