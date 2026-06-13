@@ -289,11 +289,11 @@
         </button>
       </div>
       <div style="font-size:10px; color:#64748b; margin-top:6px; line-height:1.3;">
-        初回のみインターネットで「オフライン準備」を実行（モデル数MB〜十数MB）。<br>
-        <strong>iOS Safari + このLAN HTTPサーバーでは Cache API が使えない</strong>ためエラーが出やすいです。<br>
-        モデルは IndexedDB に生データを保存し、blob URL でロードするようにしてオフライン対応を強化しました。<br>
-        <strong>本番はHTTPS（GitHub Pagesなど）にデプロイ推奨</strong>でフルPWAオフラインが安定します。
+        モデルはアプリにバンドル済み（初回ロードで ~6MB ダウンロード、以後オフラインOK）。<br>
+        「オフライン準備」は WASM/bundle の外部 CDN をキャッシュするためのもの（初回ネット必須）。<br>
+        <strong>HTTPS (GitHub Pages) でフル PWA オフライン動作。</strong> LAN HTTP では制限あり。
       </div>
+      <div id="debug-log" style="font-size:9px; color:#ff0; background:#111; padding:3px; margin-top:3px; max-height:50px; overflow:auto; white-space:pre-wrap; border:1px solid #333;"></div>
     </div>
 
     <!-- Metrics -->
@@ -657,6 +657,15 @@
       });
     }
 
+    function logDebug(msg) {
+      const log = $("debug-log");
+      if (log) {
+        log.textContent += new Date().toLocaleTimeString() + ": " + msg + "\n";
+        log.scrollTop = log.scrollHeight;
+      }
+      console.log("[DEBUG] " + msg);
+    }
+
     // ==================== DRAW (with mirror handling) ====================
     function draw(canvas, ctx, lms, m, phase) {
       if (!lms || !lms.length) return;
@@ -702,13 +711,18 @@
     async function loadLandmarker() {
       const st = $("status-text");
       st.textContent = "モデル読込中...";
+      logDebug("Starting loadLandmarker");
       try {
-        // Use dynamic import for consistency with prepare, to ensure module is properly loaded (helps with SW cached ESM on GitHub Pages)
+        logDebug("Importing bundle from " + BUNDLE_URL);
         const mpModule = await import(BUNDLE_URL);
         const { FilesetResolver, PoseLandmarker } = mpModule;
         if (!FilesetResolver || !PoseLandmarker) throw new Error("MediaPipe bundle not loaded");
+        logDebug("Bundle imported OK");
 
+        logDebug("Calling forVisionTasks with " + WASM_BASE);
         const vision = await FilesetResolver.forVisionTasks(WASM_BASE);
+        logDebug("forVisionTasks OK");
+
         // Always use the bundled local model for reliable offline on GitHub Pages (no external fetch, no IDB dependency for model).
         // This fixes loading failures from external model or stale IDB data.
         let modelAssetPath = LOCAL_MODEL_PATH;
@@ -716,7 +730,9 @@
           // Full model not bundled, fall back to external (requires net first time)
           modelAssetPath = MODEL_URLS.full;
         }
+        logDebug("Using modelAssetPath: " + modelAssetPath);
 
+        logDebug("Calling createFromOptions...");
         poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
           baseOptions: { modelAssetPath: modelAssetPath, delegate: "GPU" },
           runningMode: "VIDEO",
@@ -725,9 +741,11 @@
           minPosePresenceConfidence: 0.5,
           minTrackingConfidence: 0.45
         });
+        logDebug("createFromOptions OK, model loaded");
         st.textContent = "準備完了";
         return true;
       } catch (err) {
+        logDebug("ERROR in loadLandmarker: " + (err.message || err));
         console.error('PoseLandmarker load failed:', err);
         st.textContent = "モデル読込失敗";
         const errMsg = err && err.message ? err.message : String(err);
@@ -744,6 +762,7 @@
 
       if (webcamRunning) return;
       if (!poseLandmarker) {
+        logDebug("No landmarker, calling loadLandmarker");
         const ok = await loadLandmarker();
         if (!ok) return;
       }
@@ -1154,33 +1173,33 @@
       statusEl.textContent = 'ライブラリとモデルをダウンロード中（数MB〜十数MB）...';
 
       const hasCaches = 'caches' in window;
+      logDebug("Starting prepareForOffline, hasCaches=" + hasCaches);
 
       try {
         let cache = null;
         if (hasCaches) {
           cache = await caches.open('archery-form-v3-offline');
         } else {
-          console.warn('caches API not available (common on iOS Safari over plain HTTP LAN IP). Will still attempt to load assets.');
+          logDebug("caches API not available");
         }
 
         // 1. Bundle
+        logDebug("Fetching bundle " + BUNDLE_URL);
         let res = await fetch(BUNDLE_URL, { mode: 'cors' });
         if (!res.ok) throw new Error('Bundle download failed: ' + res.status);
         if (cache) await cache.put(BUNDLE_URL, res.clone());
+        logDebug("Bundle fetched OK");
 
         // 2. Trigger WASM + resolver (internal fetches for runtime)
+        logDebug("Importing bundle for WASM");
         const { FilesetResolver } = await import(BUNDLE_URL);
+        logDebug("Calling forVisionTasks " + WASM_BASE);
         const vision = await FilesetResolver.forVisionTasks(WASM_BASE);
+        logDebug("WASM resolver OK");
 
-        // 3. Model
-        const modelUrl = MODEL_URLS[modelType] || MODEL_URLS.lite;
-        res = await fetch(modelUrl, { mode: 'cors' });
-        if (!res.ok) throw new Error('Model download failed: ' + res.status);
-        const modelBuffer = await res.arrayBuffer();
-        if (cache) await cache.put(modelUrl, new Response(modelBuffer));  // re-wrap for cache
-
-        // Save to IDB for environments without Cache API (iOS HTTP LAN)
-        await saveModelToIDB(modelUrl, modelBuffer);
+        // 3. Model - skip external fetch since we have bundled local file (to avoid unnecessary network and potential issues)
+        logDebug("Model is bundled locally, skipping external fetch in prep");
+        // (local model will be loaded directly in loadLandmarker)
 
         // Mark as prepared for fallback (always set, even without full Cache API)
         localStorage.setItem('archery_form_offline_prepared', 'true');
@@ -1200,6 +1219,7 @@
           updateOfflineStatus();
         }, 1400);
       } catch (err) {
+        logDebug("ERROR in prepare: " + (err.message || err));
         console.error('Offline preparation failed:', err);
         const msg = err && err.message ? err.message : String(err);
         if (msg.includes('caches') || msg.includes('Cache')) {
