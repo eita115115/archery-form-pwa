@@ -732,15 +732,22 @@
         }
         logDebug("Using modelAssetPath: " + modelAssetPath);
 
-        logDebug("Testing fetch for modelAssetPath...");
+        logDebug("Pre-loading model to ArrayBuffer and using blob URL for createFromOptions...");
+        let modelBuffer;
         try {
-          const testRes = await fetch(modelAssetPath);
-          logDebug("Model fetch test status: " + testRes.status + " content-length: " + (testRes.headers.get('content-length') || 'unknown'));
-          if (!testRes.ok) throw new Error("Model file fetch failed with status " + testRes.status);
+          const modelRes = await fetch(modelAssetPath);
+          logDebug("Model fetch status: " + modelRes.status);
+          if (!modelRes.ok) throw new Error("Model fetch failed: " + modelRes.status);
+          modelBuffer = await modelRes.arrayBuffer();
+          logDebug("Model loaded to buffer, size: " + modelBuffer.byteLength);
         } catch (fetchErr) {
-          logDebug("Model fetch test failed: " + fetchErr);
+          logDebug("Model pre-load failed: " + fetchErr);
           throw fetchErr;
         }
+        const modelBlob = new Blob([modelBuffer], { type: 'application/octet-stream' });
+        const modelBlobUrl = URL.createObjectURL(modelBlob);
+        modelAssetPath = modelBlobUrl;  // use blob URL for the library
+        logDebug("Using blob URL for model: " + modelAssetPath);
 
         logDebug("Calling createFromOptions...");
         poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
