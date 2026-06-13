@@ -52,20 +52,28 @@
 - Create repository
 
 ### 2. このプロジェクトを新しいGitHubリポジトリにプッシュ（このフォルダのみ操作）
+まず認証:
 ```powershell
 cd C:\Users\eita2\Projects\archery-form
-git remote add origin https://github.com/あなたのユーザー名/archery-form.git
-git branch -M main
-git push -u origin main
+gh auth login
 ```
-（「あなたのユーザー名」は実際のGitHubユーザー名に置き換え）
+（ブラウザでログイン。claude fable 5とは無関係の新しいアカウント/トークンでOK）
 
-### 3. GitHub Pagesを有効化
-- GitHubのリポジトリページ → Settings → Pages
-- Source: "Deploy from a branch"
-- Branch: `main` / root
+次に新しいリポジトリ作成 + プッシュ（**新しい名前** "archery-form-pwa" を使用。claude fable 5に干渉しない）:
+```powershell
+gh repo create archery-form-pwa --public --source=. --remote=origin --push
+```
+
+これで自動的に https://あなたのユーザー名.github.io/archery-form-pwa/ が準備されます。
+
+### 3. GitHub Pagesを有効化（HTTPSオン）
+gh コマンドで自動設定も可能ですが、Webで:
+- リポジトリページ（gh create 後に表示） → Settings → Pages
+- Source: Deploy from a branch → `main` / root
 - Save
-- 数分待つと URL が表示されます: `https://あなたのユーザー名.github.io/archery-form/`
+- 1-2分後、URL: `https://あなたのユーザー名.github.io/archery-form-pwa/`
+
+これがスマホで開く本番URLです。
 
 ### 4. スマホでアクセス・オフライン準備・PWAインストール
 - スマホのブラウザ（Safari/Chrome）で **そのHTTPS URL** を開く（例: https://yourname.github.io/archery-form/）
