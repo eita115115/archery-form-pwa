@@ -8,7 +8,7 @@
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#0f172a">
   <!-- MediaPipe (required, free CDN, official) -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.mjs" crossorigin="anonymous"></script>
   <style>
     :root {
       --bg: #0f172a;
@@ -448,8 +448,9 @@
       full: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task"
     };
 
-    const BUNDLE_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs';
-    const WASM_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm';
+    // Pinned version for consistency between bundle and WASM (avoids version mismatch issues)
+    const BUNDLE_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/vision_bundle.mjs';
+    const WASM_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm';
 
     // IDB helpers for storing model bytes locally (works even without Cache API)
     async function saveModelToIDB(url, buffer) {
@@ -700,7 +701,9 @@
       const st = $("status-text");
       st.textContent = "モデル読込中...";
       try {
-        const { FilesetResolver, PoseLandmarker } = window;
+        // Use dynamic import for consistency with prepare, to ensure module is properly loaded (helps with SW cached ESM on GitHub Pages)
+        const mpModule = await import(BUNDLE_URL);
+        const { FilesetResolver, PoseLandmarker } = mpModule;
         if (!FilesetResolver || !PoseLandmarker) throw new Error("MediaPipe bundle not loaded");
 
         const vision = await FilesetResolver.forVisionTasks(WASM_BASE);
@@ -729,10 +732,9 @@
         });
         st.textContent = "準備完了";
         return true;
-      } catch (e) {
-        console.error(e);
-        st.textContent = "モデル読込失敗";
+      } catch (err) {
         console.error('PoseLandmarker load failed:', err);
+        st.textContent = "モデル読込失敗";
         const errMsg = err && err.message ? err.message : String(err);
         alert(`モデル読込に失敗しました。\nエラー詳細: ${errMsg}\n\n・初めての場合は「オフライン準備」ボタンを押してモデルをダウンロードしてください。\n・オフライン時はIDB/キャッシュからロードを試みます。\n・インターネット接続、準備の成功、HTTPS公開の有無を確認してください。`);
         return false;
