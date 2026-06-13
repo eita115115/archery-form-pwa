@@ -39,13 +39,58 @@
 - ページ再読み込みで明示保存していないものは消えます
 - 「スナップ」もユーザーがボタンを押したときのみPNG保存します
 
-## 使い方
-1. `index.html` をブラウザで開く（または `serve.ps1` でローカルサーバー）
-2. **初めての場合**：「オフライン準備」ボタンを押してライブラリ＋モデルをダウンロード（初回のみネット必要、数MB〜十数MB）
-3. 「カメラで分析を開始」をタップ → カメラ許可
-4. スマホは**横（サイドビュー）**が最も精度が高い
-5. リリースを検知したら「保存する」ボタンで明示的に残す
-6. PWAとしてホーム画面に追加するとより快適。以降は**完全オフライン**で動作します。
+## 使い方（本番推奨：GitHub PagesでHTTPS公開）【これでモデル読み込み失敗を根本解決】
+
+**GitHub Pages（HTTPS）を使うと、iOS/AndroidでPWAの完全オフライン・Cache API・Service Workerが正しく動作します。LAN HTTPサーバーは開発テスト用でiOSでは制限が多く、モデル読み込み失敗の原因になります。**
+
+### 1. GitHubに**完全に新しいリポジトリ**を作成（重要：Claude Fable 5など既存のものに絶対干渉しない）
+- GitHub.com にログイン
+- 「New repository」をクリック
+- Repository name: `archery-form` または `archery-pose-coach` など（**新しい名前を付けてください**。既存のClaude Fable 5リポジトリやサーバーには**絶対に**使わない・プッシュしない）
+- Public または Private（PagesはPublicで無料）
+- **Add a README file はチェックしない**（後で上書き）
+- Create repository
+
+### 2. このプロジェクトを新しいGitHubリポジトリにプッシュ（このフォルダのみ操作）
+```powershell
+cd C:\Users\eita2\Projects\archery-form
+git remote add origin https://github.com/あなたのユーザー名/archery-form.git
+git branch -M main
+git push -u origin main
+```
+（「あなたのユーザー名」は実際のGitHubユーザー名に置き換え）
+
+### 3. GitHub Pagesを有効化
+- GitHubのリポジトリページ → Settings → Pages
+- Source: "Deploy from a branch"
+- Branch: `main` / root
+- Save
+- 数分待つと URL が表示されます: `https://あなたのユーザー名.github.io/archery-form/`
+
+### 4. スマホでアクセス・オフライン準備・PWAインストール
+- スマホのブラウザ（Safari/Chrome）で **そのHTTPS URL** を開く（例: https://yourname.github.io/archery-form/）
+- **「オフライン準備」ボタン** をタップ（初回のみ、モデルなどをキャッシュ）
+- カメラ許可
+- ページ下部やブラウザメニューから「ホーム画面に追加」（PWAインストール）
+- 以後、ホーム画面のアイコンから起動可能。Wi-Fiオフでも完全オフラインで動作します。
+
+**これでモデル読み込み失敗はHTTPSにより解決します。**
+
+### ローカル開発/テスト用（任意、GitHub公開後不要）
+ローカルサーバー例（PCブラウザ用）:
+```powershell
+cd Projects/archery-form
+powershell -NoProfile -ExecutionPolicy Bypass -File serve.ps1
+```
+→ http://localhost:8741/
+
+スマホLANテスト用（開発時のみ）:
+- `start-iphone-server.bat` をダブルクリック
+- スマホから表示されたIP:8742を開く（ただしHTTPSでないのでiOS制限あり）
+
+### 更新時
+- コード変更 → `git add . ; git commit -m "update" ; git push`
+- Pagesが自動再デプロイされます。
 
 ## 完全オフライン対応
 - Service Worker が MediaPipeのJSバンドル、WASMランタイム、poseモデルをキャッシュします。
