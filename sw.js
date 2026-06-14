@@ -3,7 +3,7 @@
 // This SW caches the MediaPipe library, WASM runtime, and model so the app
 // can run completely offline after initial preparation.
 
-const CACHE_NAME = 'archery-form-v4-offline';
+const CACHE_NAME = 'archery-form-v5-offline';
 const CORE_ASSETS = [
   './',
   './index.html',

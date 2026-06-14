@@ -1202,13 +1202,16 @@
     // (BUNDLE_URL and WASM_BASE defined earlier for use in loadLandmarker too)
 
     async function updateOfflineStatus() {
+      logDebug('updateOfflineStatus called');
       const statusEl = $('offline-status');
       const btn = $('prepare-btn');
-      if (!statusEl || !btn) return;
+      if (!statusEl || !btn) { logDebug('statusEl or btn not found'); return; }
 
       const preparedFlag = localStorage.getItem('archery_form_offline_prepared') === 'true';
+      logDebug('preparedFlag=' + preparedFlag);
 
       if (!('caches' in window)) {
+        logDebug('no caches API');
         if (preparedFlag) {
           statusEl.textContent = '✓ オフライン準備済み（この環境ではCache API制限あり）';
           statusEl.style.color = '#22c55e';
@@ -1224,13 +1227,16 @@
       }
 
       try {
-        const cache = await caches.open('archery-form-v3-offline');
+        logDebug('opening cache v5');
+        const cache = await caches.open('archery-form-v5-offline');
+        logDebug('cache opened');
         const hasBundle = await cache.match(BUNDLE_URL);
         const hasModelLite = await cache.match(MODEL_URLS.lite);
         const hasModelFull = await cache.match(MODEL_URLS.full);
 
         const hasModel = hasModelLite || hasModelFull;
         const ready = hasBundle && hasModel;
+        logDebug('hasBundle=' + !!hasBundle + ' hasModel=' + hasModel + ' ready=' + ready);
 
         if (ready) {
           statusEl.textContent = '✓ オフライン準備済み（モデルキャッシュあり）';
@@ -1249,6 +1255,7 @@
           btn.style.background = '#0ea5e9';
         }
       } catch (e) {
+        logDebug('Cache status check error: ' + (e.message || e));
         console.warn('Cache status check failed:', e);
         if (preparedFlag) {
           statusEl.textContent = '✓ オフライン準備済み（詳細確認不可・制限あり）';
@@ -1277,7 +1284,7 @@
       try {
         let cache = null;
         if (hasCaches) {
-          cache = await caches.open('archery-form-v3-offline');
+          cache = await caches.open('archery-form-v5-offline');
         } else {
           logDebug("caches API not available");
         }
